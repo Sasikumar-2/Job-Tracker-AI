@@ -27,7 +27,7 @@ export default function Navbar({ currentUser, onOpenResume, onLogout }) {
           </div>
           <div className="d-flex align-items-center">
             <span className="fw-semibold text-nowrap" style={{ fontSize: '15px', color: 'var(--text-main)' }}>
-              TrackJob
+              Job-Tracker-AI
             </span>
             <span className="text-muted ms-2 ps-2 border-start d-none d-md-inline" style={{ fontSize: '12px' }}>
               Application Tracker

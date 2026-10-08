@@ -1,4 +1,4 @@
-# AI Job Application Tracker
+# Job-Tracker-AI
 
 Full-stack application featuring a React + Vite frontend and a Flask backend with AI resume matching.
 

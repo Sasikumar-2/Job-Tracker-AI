@@ -135,7 +135,7 @@ export default function App() {
       // Keep strictly in React memory — NO tokens or sensitive data in DevTools Storage
       setCurrentUser(userData);
       setResumeText(userData.resume_text);
-      addToast(isSignup ? 'Account created successfully' : 'Signed in to TrackJob', 'success');
+      addToast(isSignup ? 'Account created successfully' : 'Signed in to Job-Tracker-AI', 'success');
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'Authentication failed. Please verify credentials.';
       setAuthError(errorMsg);

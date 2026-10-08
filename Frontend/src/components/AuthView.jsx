@@ -48,7 +48,7 @@ export default function AuthView({ onAuth, authError, isSignup, onToggleSignup }
             </svg>
           </div>
           <h4 className="fw-semibold mb-1" style={{ fontSize: '18px', color: 'var(--text-main)' }}>
-            {isSignup ? 'Create Account' : 'Sign in to TrackJob'}
+            {isSignup ? 'Create Account' : 'Sign in to Job-Tracker-AI'}
           </h4>
           <p className="text-muted" style={{ fontSize: '12px', margin: 0 }}>
             Application Pipeline & Resume Match Tracker
