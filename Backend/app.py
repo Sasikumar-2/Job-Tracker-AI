@@ -3,10 +3,12 @@ import json
 import io
 import pathlib
 import re
+import urllib.parse
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 from pypdf import PdfReader
+from sqlalchemy.engine import make_url
 from models import db, User, Application, ApplicationAnalysis
 from ai_service import analyze_job_match
 from auth_service import (
@@ -18,14 +20,66 @@ from auth_service import (
 
 load_dotenv()
 
+def clean_database_url(raw_url):
+    """
+    Sanitizes common copy-paste and environment variable formatting issues:
+    - Strips surrounding quotes, whitespace, and newlines
+    - Strips prefixes like 'export ', 'psql ', or accidental 'DATABASE_URL='
+    - Normalizes postgres:// to postgresql://
+    - URL-encodes special characters in passwords
+    """
+    if not raw_url:
+        return None
+    url = raw_url.strip()
+    if url.startswith("export "):
+        url = url[7:].strip()
+    if url.startswith("DATABASE_URL="):
+        url = url[len("DATABASE_URL="):].strip()
+    elif url.startswith("DATABASE_URL"):
+        url = url[len("DATABASE_URL"):].strip()
+        if url.startswith("="):
+            url = url[1:].strip()
+    if url.startswith("psql "):
+        url = url[5:].strip()
+    if (url.startswith('"') and url.endswith('"')) or (url.startswith("'") and url.endswith("'")):
+        url = url[1:-1].strip()
+    url = url.strip("'").strip('"').strip()
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        try:
+            prefix = "postgresql://"
+            rest = url[len(prefix):]
+            if '@' in rest:
+                at_split = rest.rsplit('@', 1)
+                creds, host_and_rest = at_split[0], at_split[1]
+                if ':' in creds:
+                    user, pwd = creds.split(':', 1)
+                    encoded_pwd = urllib.parse.quote_plus(urllib.parse.unquote_plus(pwd))
+                    url = f"{prefix}{user}:{encoded_pwd}@{host_and_rest}"
+        except Exception:
+            pass
+    return url
+
 app = Flask(__name__)
 os.makedirs(app.instance_path, exist_ok=True)
 default_db_uri = f"sqlite:///{(pathlib.Path(app.instance_path) / 'job_tracker.db').as_posix()}"
-database_url = os.getenv('DATABASE_URL')
-# Normalize postgres:// to postgresql:// for modern SQLAlchemy compatibility
-if database_url and database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url or default_db_uri
+
+raw_db_url = os.getenv('DATABASE_URL')
+cleaned_db_url = clean_database_url(raw_db_url)
+
+if cleaned_db_url:
+    try:
+        make_url(cleaned_db_url)
+        app.config['SQLALCHEMY_DATABASE_URI'] = cleaned_db_url
+    except Exception as parse_err:
+        masked = re.sub(r':([^@]+)@', ':****@', cleaned_db_url) if '@' in cleaned_db_url else '***'
+        print(f"WARNING: Could not parse DATABASE_URL ('{masked}'): {parse_err}")
+        print("Falling back to local SQLite database.")
+        app.config['SQLALCHEMY_DATABASE_URI'] = default_db_uri
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = default_db_uri
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Allowed CORS origins (supports local development, Vercel/Netlify/Render live URLs, and FRONTEND_URL env var)
