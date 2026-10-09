@@ -17,7 +17,11 @@ import './App.css';
 // Ensure browser sends HttpOnly JWT cookies on all requests
 axios.defaults.withCredentials = true;
 
-const rawApiBase = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
+const defaultApi = (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+  ? 'https://job-tracker-ai-2.onrender.com/api'
+  : 'http://localhost:5000/api';
+
+const rawApiBase = import.meta.env.VITE_API_BASE || defaultApi;
 const API_BASE = rawApiBase.endsWith('/api')
   ? rawApiBase.replace(/\/+$/, '')
   : `${rawApiBase.replace(/\/+$/, '')}/api`;
