@@ -78,23 +78,46 @@ def jwt_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def _get_cookie_security_config():
+    """
+    Determines secure and SameSite cookie policies based on COOKIE_SECURE,
+    COOKIE_SAMESITE, environment, and reverse-proxy HTTPS status.
+    """
+    env_secure = os.getenv('COOKIE_SECURE')
+    if env_secure is not None:
+        is_secure = env_secure.strip().lower() in ('true', '1', 'yes')
+    else:
+        is_secure = (
+            os.getenv('FLASK_ENV') == 'production' or
+            os.getenv('ENV') == 'production' or
+            request.is_secure or
+            request.headers.get('X-Forwarded-Proto', '').lower() == 'https'
+        )
+
+    env_samesite = os.getenv('COOKIE_SAMESITE')
+    if env_samesite is not None and env_samesite.strip():
+        samesite_policy = env_samesite.strip()
+    else:
+        samesite_policy = 'None' if is_secure else 'Lax'
+
+    return is_secure, samesite_policy
+
 def set_auth_cookie(response, token):
     """
     Attaches the JWT as a secure HttpOnly cookie to the HTTP response.
     This ensures JavaScript / DevTools storage (localStorage/sessionStorage)
     cannot access, read, or leak the token.
     """
-    # Only mark secure if explicitly configured or serving over HTTPS
-    is_secure = os.getenv('FLASK_ENV') == 'production' or request.is_secure
+    is_secure, samesite_policy = _get_cookie_security_config()
 
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         max_age=JWT_EXPIRATION_DAYS * 24 * 60 * 60,
-        httponly=True,       # CRITICAL: Blocks JavaScript access (XSS immune, not accessible via DevTools storage)
-        samesite='Lax',      # CRITICAL: Protects against Cross-Site Request Forgery (CSRF)
-        secure=is_secure,    # False for localhost development, True in HTTPS production
-        path='/'             # Valid for all API routes
+        httponly=True,            # CRITICAL: Blocks JavaScript access (XSS immune)
+        samesite=samesite_policy, # Honors COOKIE_SAMESITE or defaults to None in prod
+        secure=is_secure,         # Honors COOKIE_SECURE or defaults to True in prod
+        path='/'                  # Valid for all API routes
     )
     return response
 
@@ -102,7 +125,7 @@ def clear_auth_cookie(response):
     """
     Clears the HttpOnly auth cookie upon logout.
     """
-    is_secure = os.getenv('FLASK_ENV') == 'production' or request.is_secure
+    is_secure, samesite_policy = _get_cookie_security_config()
 
     response.set_cookie(
         key=COOKIE_NAME,
@@ -110,7 +133,7 @@ def clear_auth_cookie(response):
         max_age=0,
         expires=0,
         httponly=True,
-        samesite='Lax',
+        samesite=samesite_policy,
         secure=is_secure,
         path='/'
     )

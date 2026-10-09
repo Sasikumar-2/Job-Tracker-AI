@@ -21,19 +21,37 @@ load_dotenv()
 app = Flask(__name__)
 os.makedirs(app.instance_path, exist_ok=True)
 default_db_uri = f"sqlite:///{(pathlib.Path(app.instance_path) / 'job_tracker.db').as_posix()}"
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL') or default_db_uri
+database_url = os.getenv('DATABASE_URL')
+# Normalize postgres:// to postgresql:// for modern SQLAlchemy compatibility
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url or default_db_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Strict CORS with credential support for secure HttpOnly cookie exchange
+# Allowed CORS origins (supports local development, Vercel/Netlify/Render live URLs, and FRONTEND_URL env var)
+allowed_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    r"^https://.*\.vercel\.app$",
+    r"^https://.*\.netlify\.app$",
+    r"^https://.*\.onrender\.com$"
+]
+custom_origins = os.getenv('FRONTEND_URL') or os.getenv('CORS_ORIGINS')
+if custom_origins:
+    if custom_origins.strip() == '*':
+        allowed_origins = [r"^https?://.*$"]
+    else:
+        for origin in custom_origins.split(','):
+            origin_clean = origin.strip()
+            if origin_clean and origin_clean not in allowed_origins:
+                allowed_origins.append(origin_clean)
+
 CORS(
     app,
     supports_credentials=True,
-    origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
-    ],
+    origins=allowed_origins,
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 )
@@ -42,6 +60,16 @@ db.init_app(app)
 
 with app.app_context():
     db.create_all()
+
+@app.route('/', methods=['GET'])
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Healthcheck endpoint for hosting providers (Render, Railway, etc.)"""
+    return jsonify({
+        "status": "healthy",
+        "service": "Job-Tracker-AI Backend API",
+        "version": "1.0.0"
+    }), 200
 
 # Default candidate resume fallback for ATS matching
 DEFAULT_RESUME = """
@@ -78,10 +106,11 @@ def signup():
         db.session.add(user)
         db.session.commit()
 
-        # Generate JWT token and attach it as an HttpOnly, SameSite=Lax cookie
+        # Generate JWT token and attach it as an HttpOnly cookie (and JSON token payload)
         token = generate_jwt_token(user)
         response = jsonify({
             "message": "User registered successfully",
+            "token": token,
             "user_id": user.id,
             "email": user.email,
             "resume_text": ""
@@ -107,10 +136,11 @@ def login():
     if not user or not user.check_password(password):
         return jsonify({"error": "Invalid email or password"}), 401
 
-    # Issue secure JWT in HttpOnly cookie
+    # Issue secure JWT in HttpOnly cookie (and JSON token payload)
     token = generate_jwt_token(user)
     response = jsonify({
         "message": "Login successful",
+        "token": token,
         "user_id": user.id,
         "email": user.email,
         "resume_text": user.resume_text or ""
@@ -329,4 +359,6 @@ def analyze_application(app_id):
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1')
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)

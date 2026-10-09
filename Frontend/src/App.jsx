@@ -17,7 +17,10 @@ import './App.css';
 // Ensure browser sends HttpOnly JWT cookies on all requests
 axios.defaults.withCredentials = true;
 
-const API_BASE = 'http://localhost:5000/api';
+const rawApiBase = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
+const API_BASE = rawApiBase.endsWith('/api')
+  ? rawApiBase.replace(/\/+$/, '')
+  : `${rawApiBase.replace(/\/+$/, '')}/api`;
 
 export default function App() {
   // Authentication & Session (Strictly In-Memory - ZERO localStorage / sessionStorage exposure)
@@ -127,6 +130,9 @@ export default function App() {
     const endpoint = isSignup ? '/signup' : '/login';
     try {
       const res = await axios.post(`${API_BASE}${endpoint}`, credentials);
+      if (res.data.token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
+      }
       const userData = {
         user_id: res.data.user_id,
         email: res.data.email,
@@ -151,6 +157,7 @@ export default function App() {
     } catch (err) {
       console.warn('Logout API failed:', err);
     }
+    delete axios.defaults.headers.common['Authorization'];
     setCurrentUser(null);
     setApplications([]);
     setResumeText('');
